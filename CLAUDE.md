@@ -337,7 +337,10 @@ Météo     : ☁️ 40% nuages, 0mm pluie
 4. **Phase 4** — Notification channels: Telegram bot + WhatsApp (Meta WhatsApp Cloud API) integration
 5. **Phase 5** — Caching layer + scheduling (cron or APScheduler)
 
----
+##  Development Style
+
+The goal of this project is learning. It involves using suggestion, knowledge transfer, and pedagogy in the development process. 
+I have been a Java developer for 8 years and I want to learn Python
 
 ## Dependencies
 
