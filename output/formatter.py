@@ -205,9 +205,9 @@ def render_timezone_group(tz_name: str, items: list[SpotForecast], now: datetime
     if suns:
         day = _local_day(suns[0].sunrise, tz)
         lead = _lead_time(suns[0].date, now, tz)
-        header = [f"🕒 {tz_name} — {day} ({lead})", _group_sun_line(suns, tz)]
+        header = [f"🕒 prévision pour : {tz_name} — {day} ({lead})", _group_sun_line(suns, tz)]
     else:
-        header = [f"🕒 {tz_name}"]
+        header = [f"🕒 prévision pour : {tz_name}"]
     header.append(_source_line(now, tz))
 
     sections = [_spot_section(it, tz) for it in items]

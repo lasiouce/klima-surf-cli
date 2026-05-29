@@ -11,22 +11,35 @@ and identifies the optimal surf window for each day.
 ## Architecture
 
 ```
-surf-forecast-scrapper/
+klima-surf-cli/
 ├── CLAUDE.md               ← this file
-├── main.py                 ← entry point (CLI or scheduler)
+├── main.py                 ← composition root / CLI entry point (wires adapters into core)
 ├── config/
-│   └── spots.json          ← spot definitions (name, coords, tide profile)
-├── api/
-│   ├── open_meteo.py       ← swell + wind + weather (Open-Meteo Marine + Weather)
+│   ├── spots.json          ← spot definitions (name, coords, swell/tide/wind profile, timezone)
+│   └── loader.py           ← JSON → Spot dataclasses
+├── api/                    ← outbound adapters (implement core/ ports)
+│   ├── open_meteo.py       ← swell + wind/weather + sun times + model grid points
 │   └── open_meteo_tides.py ← tide events derived from Open-Meteo sea level
-├── core/
-│   ├── score.py            ← session score calculator (0–10)
-│   └── window.py           ← optimal session window finder
-├── models/
-│   └── forecast.py         ← dataclasses: SwellData, TideData, WindData, SessionScore
+├── core/                   ← use cases (pure, depend only on models/ + ports)
+│   ├── ports.py            ← ForecastProvider, TideProvider (typing.Protocol)
+│   ├── geo.py              ← angular helpers (offshore logic) + haversine distance
+│   ├── tides.py            ← derive high/low events from a sea-level series
+│   ├── timeline.py         ← pick the day's daylight window, fold into ForecastBlocks
+│   ├── score.py            ← session score calculator (0–10)         [PLANNED — Phase 2]
+│   └── window.py           ← optimal scored session window finder    [PLANNED — Phase 2]
+├── models/                 ← domain layer (frozen dataclasses, no I/O)
+│   ├── forecast.py         ← SwellData, WindData, TideEvent, SunTimes, GridPoint(s),
+│   │                          ForecastBlock, SessionScore
+│   └── spot.py             ← Spot
 └── output/
-    └── formatter.py        ← CLI display / Telegram / JSON
+    └── formatter.py        ← CLI rendering (grouped by timezone; Telegram/WhatsApp/JSON planned)
 ```
+
+> **Implementation status:** Phase 1 is built and enriched. `core/score.py` and
+> `core/window.py` (scored windows) do not exist yet — they are the Phase 2 spec
+> below. What exists today is `core/timeline.py`, which selects the relevant
+> *daylight* window (no scoring) and aggregates it into `ForecastBlock`s for the
+> CLI. `SessionScore` is defined in `models/` but not yet populated.
 
 ---
 
@@ -77,9 +90,11 @@ surf-forecast-scrapper/
 
 ## Data models (`models/forecast.py`)
 
+All models are `@dataclass(frozen=True)` (immutable, like a Java `record`).
+
 ```python
-@dataclass
-class SwellData:
+@dataclass(frozen=True)
+class SwellData:                      # one hourly wave/swell sample
     timestamp: datetime
     wave_height_m: float
     wave_period_s: float
@@ -88,33 +103,67 @@ class SwellData:
     swell_period_s: float
     swell_direction_deg: float
     wind_wave_height_m: float
+    water_temp_c: float | None = None  # SST; None when the wave model omits it
 
-@dataclass
-class WindData:
+@dataclass(frozen=True)
+class WindData:                       # one hourly wind + sky sample
     timestamp: datetime
     speed_kmh: float
     direction_deg: float
-    is_offshore: bool           # computed from spot orientation
+    is_offshore: bool                 # computed from the spot orientation by the adapter
     cloud_cover_pct: float
     precipitation_mm: float
 
-@dataclass
+@dataclass(frozen=True)
 class TideEvent:
     time: datetime
     height_m: float
     is_high: bool
-    coefficient: int            # 20–120 scale (French standard)
-    trend: str                  # "rising" | "falling"
+    trend: str                        # "rising" | "falling"
+    coefficient: int | None = None    # French 20–120 scale; None (not derivable from sea level)
 
-@dataclass
-class SessionScore:
+@dataclass(frozen=True)
+class SunTimes:                       # daylight bounds for one day at a spot
+    date: date
+    sunrise: datetime
+    sunset: datetime
+
+@dataclass(frozen=True)
+class GridPoint:                      # the model grid cell Open-Meteo actually used
+    latitude: float
+    longitude: float
+
+@dataclass(frozen=True)
+class GridPoints:                     # grid cells behind a spot's forecast (None on probe failure)
+    marine: GridPoint | None
+    weather: GridPoint | None
+
+@dataclass(frozen=True)
+class ForecastBlock:                  # conditions folded over a short window (default 2h)
+    start: datetime
+    end: datetime
+    wave_height_min_m: float          # linear quantities → min–max range over the block
+    wave_height_max_m: float
+    swell_period_s: float             # period + directions taken from the block's first hour
+    swell_direction_deg: float        # (averaging compass bearings is a circular-math trap)
+    wind_speed_min_kmh: float
+    wind_speed_max_kmh: float
+    wind_direction_deg: float
+    is_offshore: bool
+    cloud_cover_min_pct: float
+    cloud_cover_max_pct: float
+    precipitation_mm_total: float     # accumulated over the block
+    water_temp_c: float | None = None
+
+@dataclass(frozen=True)
+class SessionScore:                   # PLANNED — defined, populated by core/score.py in Phase 2
     timestamp: datetime
-    score: float                # 0.0–10.0
-    label: str                  # "FLAT" | "POOR" | "FAIR" | "GOOD" | "EPIC"
+    score: float                      # 0.0–10.0
+    label: str                        # "FLAT" | "POOR" | "FAIR" | "GOOD" | "EPIC"
     swell_score: float
     wind_score: float
     tide_score: float
-    notes: list[str]            # human-readable explanation
+    notes: list[str] = field(default_factory=list)  # human-readable explanation
 ```
 
 ---
@@ -224,6 +273,10 @@ Score based on: height in optimal range + correct trend + coefficient bonus.
 ]
 ```
 
+Each entry also accepts an optional `"timezone"` (IANA name) used to display the
+spot's times and group it in the output; it defaults to `"Europe/Paris"` (the
+whole French Basque Country), so existing config without the key keeps working.
+
 ---
 
 ## Environment variables (`.env`)
@@ -309,7 +362,22 @@ dev = [
 
 ---
 
-## Session window finder (`core/window.py`)
+## Daylight timeline (`core/timeline.py`) — implemented
+
+Today's view layer (no scoring). Given a spot's `SunTimes` plus the hourly
+`SwellData` / `WindData` series, it picks the relevant day and folds its daylight
+into `ForecastBlock`s. Both `now` and the local `tz` are **injected** so the
+module stays pure and deterministic (no clock/timezone hard-coding).
+
+- **Which day** (`select_sun`): asked **before noon** local → plan **today**
+  (window clamped to `now` so past hours drop); asked **at/after noon** → plan
+  **tomorrow** (full sunrise→sunset).
+- **`daylight_blocks(...)`** returns `list[ForecastBlock]`, each `block_h`
+  hours (default 2), covering only daylight. Blocks with no swell *or* wind data
+  in range are skipped, so a partial series yields fewer blocks rather than
+  raising.
+
+## Scored session window finder (`core/window.py`) — PLANNED (Phase 2)
 
 Given an array of `SessionScore` objects for a day, find the best contiguous block of hours where:
 1. Score ≥ threshold (default 6.0)
@@ -318,31 +386,49 @@ Given an array of `SessionScore` objects for a day, find the best contiguous blo
 
 Return: `(start_time, end_time, peak_score_time, avg_score)`
 
+## Geo helpers (`core/geo.py`) — implemented
+
+Pure angular/distance maths, reused by the adapters and (later) the scorer:
+`angular_difference`, `is_offshore_wind` (wind from within ±45° of the spot's
+`offshore_direction_deg`), and `haversine_km` (great-circle distance, used to
+report how far each model grid cell sits from the spot — a spatial-precision
+signal shown in the CLI).
+
 ---
 
 ## Output format (CLI example)
 
-```
-🌊 La Barre — Mercredi 28 mai
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Score     : ████████░░  8.1/10  GOOD
-Fenêtre   : 07h00 → 10h30
+Spots are **grouped by timezone**; the shared day, daylight, lead time and data
+source head the group once, then each spot shows its daylight `ForecastBlock`
+rows and tide line. (Scoring/window — the `Score`/`Fenêtre` lines — arrives in
+Phase 2.) The tide `coefficient` is `None` from Open-Meteo, so the `| Coeff`
+suffix only appears once it is backfilled.
 
-Houle     : 1.8m — 13s — WSW (285°)
-Vent      : 12 km/h offshore (E) ✅
-Marée     : Montante | BM 05h45 (0.8m) → HM 12h10 (3.2m)
-Coeff     : 88 (vives-eaux)
-Eau       : 17°C
-Météo     : ☁️ 40% nuages, 0mm pluie
+```
+🕒 prévision pour : Europe/Paris — Ven 29 mai (aujourd'hui)
+☀️ lever 06h28 → coucher 21h38
+📡 vagues : Open-Meteo Marine · météo : Open-Meteo · récupéré à 18h32
+
+🌊 Anglet - La Barre
+🌡️ Eau : 17°C
+📡 point de grille : vagues 2.3 km · météo 0.6 km
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+18h00→20h00  1.2–1.4m 13s WSW  ·  12 km/h offshore ✅ (E)  ·  ☁️ 40% 0.0mm
+20h00→21h38  1.3–1.5m 13s WSW  ·  10–14 km/h offshore ✅ (E)  ·  ☁️ 30–50% 0.2mm
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Marée  : BM 17h45 (0.8m) → PM 23h10 (3.2m)
 ```
 
 ---
 
 ## Development phases
 
-1. **Phase 1** — API clients (`api/`) + dataclasses (`models/`) + basic CLI output
-2. **Phase 2** — Score calculator (`core/score.py`) + window finder (`core/window.py`)
-3. **Phase 3** — Multi-spot support + config-driven spot profiles
+1. **Phase 1** — ✅ **Done.** API clients (`api/`) + dataclasses (`models/`) +
+   config loader + CLI output. Enriched beyond the original scope with
+   `core/timeline.py` (daylight-block view), `core/geo.py`, timezone grouping,
+   model grid-point distance, and sea-temperature display.
+2. **Phase 2** — Score calculator (`core/score.py`) + scored window finder (`core/window.py`)
+3. **Phase 3** — Multi-spot support + config-driven spot profiles (config loader done; scoring-driven profiles pending Phase 2)
 4. **Phase 4** — Notification channels: Telegram bot + WhatsApp (Meta WhatsApp Cloud API) integration
 5. **Phase 5** — Caching layer + scheduling (cron or APScheduler)
 
@@ -353,17 +439,20 @@ I have been a Java developer for 8 years and I want to learn Python
 
 ## Dependencies
 
+Defined in `pyproject.toml`; install with `pip install -e ".[dev]"`.
+
 ```toml
 # pyproject.toml
 [project]
 requires-python = ">=3.11"
 dependencies = [
-    "httpx",           # async HTTP client
-    "python-dotenv",   # .env loading
-    "pydantic",        # data validation
-    "rich",            # CLI formatting
-    "apscheduler",     # optional scheduling
+    "httpx",         # HTTP client (used synchronously in Phase 1)
+    "python-dotenv", # .env loading
+    "pydantic",      # validation of raw API JSON at the api/ boundary
+    "rich",          # CLI formatting
 ]
 ```
 
-Install: `pip install httpx python-dotenv pydantic rich apscheduler`
+`apscheduler` is deferred to Phase 5 (scheduling) and is **not** a current
+dependency. Dev tooling (`pytest`, `pytest-cov`, `respx`, `mypy`, `ruff`,
+`black`) lives in `[project.optional-dependencies].dev`.
