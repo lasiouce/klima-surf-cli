@@ -8,14 +8,14 @@ JSON-mapping code without a network.
 
 from __future__ import annotations
 
-from datetime import UTC
+from datetime import UTC, date
 
 import httpx
 import pytest
 import respx
 
 from api.open_meteo import OpenMeteoClient
-from models.forecast import SwellData, WindData
+from models.forecast import SunTimes, SwellData, WindData
 from models.spot import Spot
 
 MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
@@ -48,6 +48,7 @@ MARINE_JSON = {
         "swell_wave_direction": [290.0, 292.0],
         "swell_wave_peak_period": [15.0, 14.0],
         "wind_wave_height": [0.4, 0.5],
+        "sea_surface_temperature": [17.2, 17.1],
     },
 }
 
@@ -58,6 +59,14 @@ WEATHER_JSON = {
         "wind_direction_10m": [100.0, 250.0],  # 100° = offshore, 250° = onshore
         "cloud_cover": [40.0, 60.0],
         "precipitation": [0.0, 0.2],
+    },
+}
+
+DAILY_JSON = {
+    "daily": {
+        "time": ["2026-05-28", "2026-05-29"],
+        "sunrise": ["2026-05-28T04:32", "2026-05-29T04:31"],
+        "sunset": ["2026-05-28T19:45", "2026-05-29T19:46"],
     },
 }
 
@@ -80,6 +89,7 @@ def test_get_swell_maps_hourly_series(client: OpenMeteoClient) -> None:
     assert first.swell_period_s == pytest.approx(14.0)
     assert first.swell_direction_deg == pytest.approx(290.0)
     assert first.wind_wave_height_m == pytest.approx(0.4)
+    assert first.water_temp_c == pytest.approx(17.2)
     # Timestamps stored as tz-aware UTC.
     assert first.timestamp.tzinfo == UTC
     assert first.timestamp.hour == 0
@@ -109,6 +119,58 @@ def test_get_wind_maps_and_computes_offshore(client: OpenMeteoClient) -> None:
     assert wind[0].is_offshore is True  # 100° wind vs 100° offshore dir
     assert wind[0].cloud_cover_pct == pytest.approx(40.0)
     assert wind[1].is_offshore is False  # 250° wind is onshore
+
+
+@respx.mock
+def test_get_sun_times_maps_daily_series(client: OpenMeteoClient) -> None:
+    route = respx.get(WEATHER_URL).mock(return_value=httpx.Response(200, json=DAILY_JSON))
+
+    sun = client.get_sun_times(SPOT)
+
+    assert len(sun) == 2
+    first = sun[0]
+    assert isinstance(first, SunTimes)
+    assert first.date == date(2026, 5, 28)
+    # Requested in GMT, stored as tz-aware UTC.
+    assert first.sunrise.tzinfo == UTC
+    assert (first.sunrise.hour, first.sunrise.minute) == (4, 32)
+    assert (first.sunset.hour, first.sunset.minute) == (19, 45)
+    assert route.calls.last.request.url.params["daily"] == "sunrise,sunset"
+
+
+@respx.mock
+def test_get_sun_times_returns_empty_on_http_error(client: OpenMeteoClient) -> None:
+    respx.get(WEATHER_URL).mock(return_value=httpx.Response(500))
+
+    assert client.get_sun_times(SPOT) == []
+
+
+@respx.mock
+def test_get_grid_points_reads_actual_grid_cell(client: OpenMeteoClient) -> None:
+    # Open-Meteo echoes the grid cell it served, which differs from the request.
+    respx.get(MARINE_URL).mock(
+        return_value=httpx.Response(200, json={"latitude": 43.54, "longitude": -1.54})
+    )
+    respx.get(WEATHER_URL).mock(
+        return_value=httpx.Response(200, json={"latitude": 43.535, "longitude": -1.56})
+    )
+
+    grid = client.get_grid_points(SPOT)
+
+    assert grid.marine is not None
+    assert (grid.marine.latitude, grid.marine.longitude) == (43.54, -1.54)
+    assert grid.weather is not None and grid.weather.longitude == -1.56
+
+
+@respx.mock
+def test_get_grid_points_degrades_to_none_on_failure(client: OpenMeteoClient) -> None:
+    respx.get(MARINE_URL).mock(return_value=httpx.Response(500))
+    respx.get(WEATHER_URL).mock(return_value=httpx.Response(200, json={"unexpected": "shape"}))
+
+    grid = client.get_grid_points(SPOT)
+
+    assert grid.marine is None  # HTTP error
+    assert grid.weather is None  # missing latitude/longitude
 
 
 @respx.mock

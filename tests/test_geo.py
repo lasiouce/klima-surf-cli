@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.geo import angular_difference, is_offshore_wind
+from core.geo import angular_difference, haversine_km, is_offshore_wind
 
 
 @pytest.mark.parametrize(
@@ -20,6 +20,23 @@ from core.geo import angular_difference, is_offshore_wind
 )
 def test_angular_difference(a: float, b: float, expected: float) -> None:
     assert angular_difference(a, b) == pytest.approx(expected)
+
+
+def test_haversine_zero_distance_for_same_point() -> None:
+    assert haversine_km(43.535, -1.562, 43.535, -1.562) == pytest.approx(0.0)
+
+
+def test_haversine_known_distance() -> None:
+    # La Barre spot (43.535, -1.562) to a grid cell ~0.0067°N, 0.0204°E away.
+    # ≈ 1.7 km; assert within a tolerant band (great-circle, not flat-earth).
+    km = haversine_km(43.535, -1.562, 43.541664, -1.5416565)
+    assert km == pytest.approx(1.75, abs=0.3)
+
+
+def test_haversine_is_symmetric() -> None:
+    a = haversine_km(43.5, -1.5, 43.7, -1.4)
+    b = haversine_km(43.7, -1.4, 43.5, -1.5)
+    assert a == pytest.approx(b)
 
 
 def test_angular_difference_never_exceeds_180() -> None:

@@ -13,7 +13,7 @@ free — similar to a Lombok ``@Value`` or a Java 16+ ``record``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,9 @@ class SwellData:
     swell_period_s: float
     swell_direction_deg: float
     wind_wave_height_m: float
+    # Sea surface temperature (°C). Optional: some wave-only models (e.g. MFWAM)
+    # return no SST, so it can be ``None``. Default keeps existing call sites valid.
+    water_temp_c: float | None = None
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,45 @@ class WindData:
     is_offshore: bool
     cloud_cover_pct: float
     precipitation_mm: float
+
+
+@dataclass(frozen=True)
+class GridPoint:
+    """The model grid cell Open-Meteo actually used (≠ the requested coords).
+
+    Forecasts aren't computed at the spot but at the nearest grid cell; the
+    distance between the two is a real spatial-precision signal.
+    """
+
+    latitude: float
+    longitude: float
+
+
+@dataclass(frozen=True)
+class GridPoints:
+    """The grid cells behind a spot's forecast — one per source model.
+
+    ``marine`` is the wave model (coarser, the surf-critical one); ``weather``
+    is the atmospheric model. Either is ``None`` when its probe failed.
+    """
+
+    marine: GridPoint | None
+    weather: GridPoint | None
+
+
+@dataclass(frozen=True)
+class SunTimes:
+    """Sunrise/sunset for one day at a spot — the bounds of surfable daylight.
+
+    ``date`` is the calendar day the event belongs to; ``sunrise`` / ``sunset``
+    are tz-aware UTC instants (converted on ingest, per the store-UTC rule). For
+    French latitudes daytime never crosses UTC midnight, so the UTC ``date`` of
+    the series matches the local (Europe/Paris) date used to pick today/tomorrow.
+    """
+
+    date: date
+    sunrise: datetime
+    sunset: datetime
 
 
 @dataclass(frozen=True)
@@ -65,6 +107,37 @@ class TideEvent:
     is_high: bool
     trend: str  # "rising" | "falling"
     coefficient: int | None = None
+
+
+@dataclass(frozen=True)
+class ForecastBlock:
+    """Conditions aggregated over a short time window (default 2h).
+
+    The CLI shows the next 12h as six of these blocks, so you can scan when a
+    spot turns good rather than reading a 7-day hour-by-hour series. Linear
+    quantities (wave height, wind speed) are summarised as a **min–max range**
+    over the block; period and the two **directions** are taken from the block's
+    first hour, because averaging compass bearings is a circular-math trap
+    (the naive mean of 350° and 10° is 180° — the opposite direction).
+    """
+
+    start: datetime
+    end: datetime
+    wave_height_min_m: float
+    wave_height_max_m: float
+    swell_period_s: float
+    swell_direction_deg: float
+    wind_speed_min_kmh: float
+    wind_speed_max_kmh: float
+    wind_direction_deg: float
+    is_offshore: bool
+    cloud_cover_min_pct: float
+    cloud_cover_max_pct: float
+    precipitation_mm_total: float  # accumulated over the block, not a min/max
+    # Sea temperature is shown once per spot (it barely moves over a day), not
+    # per block; carried here so it flows through the daylight filter. ``None``
+    # when the source has no SST.
+    water_temp_c: float | None = None
 
 
 @dataclass(frozen=True)

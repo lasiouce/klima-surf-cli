@@ -18,6 +18,8 @@ def test_open_meteo_satisfies_forecast_provider() -> None:
     provider: ForecastProvider = OpenMeteoClient()
     assert hasattr(provider, "get_swell")
     assert hasattr(provider, "get_wind")
+    assert hasattr(provider, "get_sun_times")
+    assert hasattr(provider, "get_grid_points")
 
 
 def test_open_meteo_tides_satisfies_tide_provider() -> None:

@@ -49,6 +49,8 @@ def test_load_spots_parses_into_spot_objects(tmp_path: Path) -> None:
     assert spot.lat == pytest.approx(43.535)
     assert spot.optimal_tide == "mid_rising"
     assert spot.coefficient_bonus == 70
+    # Config omits "timezone", so the default applies.
+    assert spot.timezone == "Europe/Paris"
 
 
 def test_load_spots_real_config_has_four_spots() -> None:

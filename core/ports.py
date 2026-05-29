@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from models.forecast import SwellData, TideEvent, WindData
+from models.forecast import GridPoints, SunTimes, SwellData, TideEvent, WindData
 from models.spot import Spot
 
 
@@ -29,6 +29,14 @@ class ForecastProvider(Protocol):
 
     def get_wind(self, spot: Spot) -> list[WindData]:
         """Hourly wind/sky series. Returns ``[]`` on failure (never raises)."""
+        ...
+
+    def get_sun_times(self, spot: Spot) -> list[SunTimes]:
+        """Daily sunrise/sunset series. Returns ``[]`` on failure (never raises)."""
+        ...
+
+    def get_grid_points(self, spot: Spot) -> GridPoints:
+        """Model grid cells behind the forecast. Fields are ``None`` on failure."""
         ...
 
 

@@ -7,6 +7,24 @@ scorer. It depends on nothing — no models, no I/O — so it is trivially testa
 
 from __future__ import annotations
 
+import math
+
+_EARTH_RADIUS_KM = 6371.0
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two lat/lon points, in kilometres.
+
+    Used to measure how far a forecast's model grid cell sits from the actual
+    spot — a spatial-precision signal. Pure maths, no I/O.
+    """
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(a))
+
+
 # Wind is considered offshore when it blows from within this many degrees of
 # the spot's offshore direction (see CLAUDE.md: "offshore ± 45°").
 DEFAULT_OFFSHORE_TOLERANCE_DEG = 45.0
