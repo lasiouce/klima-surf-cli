@@ -11,6 +11,10 @@ score and the optimal surf window for each day.
 
 ---
 
+## Output 
+
+![Capture d’écran 2026-05-29 183240.png](Capture%20d%E2%80%99%C3%A9cran%202026-05-29%20183240.png)
+
 ## Features
 
 **Available today**
