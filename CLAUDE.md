@@ -17,8 +17,8 @@ surf-forecast-scrapper/
 ├── config/
 │   └── spots.json          ← spot definitions (name, coords, tide profile)
 ├── api/
-│   ├── open_meteo.py       ← swell + wind + weather (Open-Meteo Marine)
-│   └── tides_atlas.py      ← tide times + heights (TidesAtlas)
+│   ├── open_meteo.py       ← swell + wind + weather (Open-Meteo Marine + Weather)
+│   └── open_meteo_tides.py ← tide events derived from Open-Meteo sea level
 ├── core/
 │   ├── score.py            ← session score calculator (0–10)
 │   └── window.py           ← optimal session window finder
@@ -45,6 +45,9 @@ surf-forecast-scrapper/
   - `swell_wave_direction` — primary swell direction (°)
   - `swell_wave_peak_period` — primary swell peak period (s)
   - `wind_wave_height` — local wind wave height (m)
+  - `sea_level_height_msl` — tide height vs mean sea level (m); high/low
+    tide events are derived from this hourly series (see Tides below)
+  - `sea_surface_temperature` — water temperature (°C) for the `Eau` line
 - Returns hourly JSON for 7 days
 
 ### Open-Meteo Weather API
@@ -57,12 +60,18 @@ surf-forecast-scrapper/
   - `precipitation` — precipitation (mm)
   - `sunrise` / `sunset` — daily (for golden hour)
 
-### TidesAtlas API
-- Base URL: `https://tidesatlas.com/api/v1`
-- Free tier with API key (register at tidesatlas.com)
-- API key stored in `.env` as `TIDES_ATLAS_KEY`
-- Key endpoint: `GET /tides?lat={lat}&lon={lon}&days={n}&include=tides`
-- Returns: high/low tide times, heights (m), tide coefficient
+### Tides (derived from Open-Meteo, no separate API)
+- No dedicated tide service: we reuse the **Open-Meteo Marine API** above,
+  requesting the hourly `sea_level_height_msl` series — free, keyless.
+- `api/open_meteo_tides.py` (`OpenMeteoTideProvider`) fetches the series and
+  hands it to `core/tides.py::derive_tide_events`, which finds the high/low
+  **turning points** (local maxima/minima) of the curve.
+- Trade-off vs a dedicated tide service: the French tide **coefficient** is
+  *not* derivable from sea level, so `TideEvent.coefficient` is `None`. It can
+  be backfilled later from an offline astronomical calendar. Tide *timing* is
+  only as precise as the hourly sampling (±~30 min).
+- (Historical: this replaced a TidesAtlas client, dropped because its free tier
+  is capped at 50 requests.)
 
 ---
 
@@ -220,7 +229,7 @@ Score based on: height in optimal range + correct trend + coefficient bonus.
 ## Environment variables (`.env`)
 
 ```
-TIDES_ATLAS_KEY=your_key_here
+# No key needed for forecast/tide data — all from Open-Meteo (free, keyless).
 TELEGRAM_BOT_TOKEN=optional
 TELEGRAM_CHAT_ID=optional
 
@@ -257,7 +266,7 @@ Dependencies point **inward**: the domain knows nothing about the outside world;
 |---|---|---|
 | Domain | `models/` | Pure entities/dataclasses. **No** I/O, no `httpx`, no framework imports. |
 | Use cases | `core/` | Business logic (scoring, window finding). Depends **only** on `models/`. Receives data through `Protocol` interfaces — never calls an API directly. |
-| Inbound/outbound adapters | `api/` | External-service clients (Open-Meteo, TidesAtlas). Implement the `Protocol`s the use cases depend on. |
+| Inbound/outbound adapters | `api/` | External-service clients (Open-Meteo marine/weather/tides). Implement the `Protocol`s the use cases depend on. |
 | Presentation adapters | `output/` | CLI, Telegram, WhatsApp, JSON renderers. Depend on `models/`, not the other way around. |
 | Composition root | `main.py` | Instantiate adapters and inject them into `core/`. **No business logic here.** |
 

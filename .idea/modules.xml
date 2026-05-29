@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/klima-surf-cli.iml" filepath="$PROJECT_DIR$/.idea/klima-surf-cli.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/surf-forecast.iml" filepath="$PROJECT_DIR$/.idea/surf-forecast.iml" />
     </modules>
   </component>
 </project>

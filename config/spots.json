@@ -1,0 +1,54 @@
+[
+  {
+    "id": "la_barre",
+    "name": "Anglet - La Barre",
+    "lat": 43.535,
+    "lon": -1.562,
+    "optimal_swell_direction_deg": 290,
+    "swell_window_deg": 45,
+    "optimal_tide": "mid_rising",
+    "min_height_m": 1.2,
+    "max_height_m": 3.0,
+    "coefficient_bonus": 70,
+    "offshore_direction_deg": 100
+  },
+  {
+    "id": "grande_plage",
+    "name": "Biarritz - Grande Plage",
+    "lat": 43.483,
+    "lon": -1.558,
+    "optimal_swell_direction_deg": 285,
+    "swell_window_deg": 50,
+    "optimal_tide": "low_mid",
+    "min_height_m": 0.8,
+    "max_height_m": 2.5,
+    "coefficient_bonus": 60,
+    "offshore_direction_deg": 110
+  },
+  {
+    "id": "cote_des_basques",
+    "name": "Biarritz - Côte des Basques",
+    "lat": 43.476,
+    "lon": -1.567,
+    "optimal_swell_direction_deg": 285,
+    "swell_window_deg": 50,
+    "optimal_tide": "low",
+    "min_height_m": 0.5,
+    "max_height_m": 2.0,
+    "coefficient_bonus": 75,
+    "offshore_direction_deg": 110
+  },
+  {
+    "id": "hossegor_graviere",
+    "name": "Hossegor - La Gravière",
+    "lat": 43.665,
+    "lon": -1.440,
+    "optimal_swell_direction_deg": 275,
+    "swell_window_deg": 40,
+    "optimal_tide": "low",
+    "min_height_m": 1.5,
+    "max_height_m": 4.0,
+    "coefficient_bonus": 85,
+    "offshore_direction_deg": 90
+  }
+]
