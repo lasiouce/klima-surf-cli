@@ -42,28 +42,7 @@ score and the optimal surf window for each day.
 notifications, and a local response cache. See the [roadmap](#roadmap).
 
 ### Example CLI output
-
-Spots in a timezone share one header (day, daylight, lead time, data source);
-each spot then lists its daylight blocks and tide line.
-
-```
-🕒 prévision pour : Europe/Paris — Ven 29 mai (aujourd'hui)
-☀️ lever 06h28 → coucher 21h38
-📡 vagues : Open-Meteo Marine · météo : Open-Meteo · récupéré à 18h32
-
-🌊 Anglet - La Barre
-🌡️ Eau : 17°C
-📡 point de grille : vagues 2.3 km · météo 0.6 km
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-18h00→20h00  1.2–1.4m 13s WSW  ·  12 km/h offshore ✅ (E)  ·  ☁️ 40% 0.0mm
-20h00→21h38  1.3–1.5m 13s WSW  ·  10–14 km/h offshore ✅ (E)  ·  ☁️ 30–50% 0.2mm
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Marée  : BM 17h45 (0.8m) → PM 23h10 (3.2m)
-```
-
-> The tide *coefficient* is `None` from Open-Meteo, so the `| Coeff` suffix only
-> appears once a value is backfilled. The score/window lines arrive in Phase 2.
-
+![Capture d’écran 2026-05-29 184748.png](Capture%20d%E2%80%99%C3%A9cran%202026-05-29%20184748.png)
 ---
 
 ## Tech stack
